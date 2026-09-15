@@ -427,10 +427,10 @@ class API(object):
         # notify extensions that the new comment is about to save
         self.signal("comments.new:before-save", thread, data)
 
-        valid, reason = self.guard.validate(uri, data)
+        valid, reason, message = self.guard.validate(uri, data)
         if not valid:
-            self.signal("comments.new:guard", reason)
-            raise Forbidden(reason)
+            self.signal("comments.new:guard", message)
+            return JSON({"reason": reason}, 403)
 
         with self.isso.lock:
             # if email-based auto-moderation enabled, check for previously approved author

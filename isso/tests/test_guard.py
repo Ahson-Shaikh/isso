@@ -51,7 +51,7 @@ class TestGuard(unittest.TestCase):
         rv = bob.post("/new?uri=test", data=self.data)
 
         self.assertEqual(rv.status_code, 403)
-        self.assertIn("ratelimit exceeded", rv.get_data(as_text=True))
+        self.assertEqual(json.loads(rv.data)["reason"], "ratelimit")
 
         alice = self.makeClient("1.2.3.4", 2)
         for i in range(2):
@@ -73,7 +73,7 @@ class TestGuard(unittest.TestCase):
             rv = client.post("/new?uri=%s" % url, data=self.data)
 
             self.assertEqual(rv.status_code, 403)
-            self.assertIn("direct responses to", rv.get_data(as_text=True))
+            self.assertEqual(json.loads(rv.data)["reason"], "direct-reply")
 
     def testSelfReply(self):
         def payload(id):
@@ -81,7 +81,9 @@ class TestGuard(unittest.TestCase):
 
         client = self.makeClient("127.0.0.1", self_reply=False)
         self.assertEqual(client.post("/new?uri=test", data=self.data).status_code, 201)
-        self.assertEqual(client.post("/new?uri=test", data=payload(1)).status_code, 403)
+        rv = client.post("/new?uri=test", data=payload(1))
+        self.assertEqual(rv.status_code, 403)
+        self.assertEqual(json.loads(rv.data)["reason"], "reply-to-self")
 
         client.application.db.execute(
             ["UPDATE comments SET", "    created = created - ?", "WHERE id = 1"],
@@ -107,7 +109,9 @@ class TestGuard(unittest.TestCase):
         self.assertEqual(client.post("/new?uri=test", data=payload("test@me.more")).status_code, 201)
 
         # if we do require email
-        self.assertEqual(client_strict.post("/new?uri=test", data=payload("")).status_code, 403)
+        rv = client_strict.post("/new?uri=test", data=payload(""))
+        self.assertEqual(rv.status_code, 403)
+        self.assertEqual(json.loads(rv.data)["reason"], "require-email")
         self.assertEqual(client_strict.post("/new?uri=test", data=payload("test@me.more")).status_code, 201)
 
     def testRequireAuthor(self):
@@ -122,5 +126,7 @@ class TestGuard(unittest.TestCase):
         self.assertEqual(client.post("/new?uri=test", data=payload("pipo author")).status_code, 201)
 
         # if we do require author
-        self.assertEqual(client_strict.post("/new?uri=test", data=payload("")).status_code, 403)
+        rv = client_strict.post("/new?uri=test", data=payload(""))
+        self.assertEqual(rv.status_code, 403)
+        self.assertEqual(json.loads(rv.data)["reason"], "require-author")
         self.assertEqual(client_strict.post("/new?uri=test", data=payload("pipo author")).status_code, 201)
