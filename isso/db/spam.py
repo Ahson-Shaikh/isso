@@ -14,14 +14,24 @@ class Guard:
             self.max_age = None
 
     def validate(self, uri, comment):
+        """Return a ``(valid, reason, message)`` tuple.
+
+        ``reason`` is a short machine-readable code for the client, and
+        ``message`` is a human-readable description for logs and extensions.
+
+        ``reason`` values (``"ratelimit"``, ``"direct-reply"``,
+        ``"reply-to-self"``, ``"require-email"``, ``"require-author"``) are a
+        contract with the JS client: ``isso/js/app/isso.js`` builds an i18n
+        key as ``"guard-" + reason``.
+        """
         if not self.conf.getboolean("enabled"):
-            return True, ""
+            return True, "", ""
 
         for func in (self._limit, self._spam):
-            valid, reason = func(uri, comment)
+            valid, reason, message = func(uri, comment)
             if not valid:
-                return False, reason
-        return True, ""
+                return False, reason, message
+        return True, "", ""
 
     @classmethod
     def ids(cls, rv):
@@ -34,7 +44,11 @@ class Guard:
         ).fetchall()
 
         if len(rv) >= self.conf.getint("ratelimit"):
-            return False, "{0}: ratelimit exceeded ({1})".format(comment["remote_addr"], ", ".join(Guard.ids(rv)))
+            return (
+                False,
+                "ratelimit",
+                "{0}: ratelimit exceeded ({1})".format(comment["remote_addr"], ", ".join(Guard.ids(rv))),
+            )
 
         # block more than three comments as direct response to the post
         if comment["parent"] is None:
@@ -49,7 +63,7 @@ class Guard:
             ).fetchall()
 
             if len(rv) >= self.conf.getint("direct-reply"):
-                return False, "%i direct responses to %s" % (len(rv), uri)
+                return False, "direct-reply", "%i direct responses to %s" % (len(rv), uri)
 
         # block replies to self unless :param:`reply-to-self` is enabled
         elif self.conf.getboolean("reply-to-self") is False:
@@ -59,17 +73,17 @@ class Guard:
             ).fetchall()
 
             if len(rv) > 0:
-                return False, "edit time frame is still open"
+                return False, "reply-to-self", "edit time frame is still open"
 
         # require email if :param:`require-email` is enabled
         if self.conf.getboolean("require-email") and not comment.get("email"):
-            return False, "email address required but not provided"
+            return False, "require-email", "email address required but not provided"
 
         # require author if :param:`require-author` is enabled
         if self.conf.getboolean("require-author") and not comment.get("author"):
-            return False, "author address required but not provided"
+            return False, "require-author", "author address required but not provided"
 
-        return True, ""
+        return True, "", ""
 
     def _spam(self, uri, comment):
-        return True, ""
+        return True, "", ""
